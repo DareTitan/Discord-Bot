@@ -1,5 +1,8 @@
 import os
 #import yt_dlp
+import random
+import wikipedia
+import wikiGen as WikipediaGenerator
 from google import genai
 from discord.ext import commands
 from discord import app_commands
@@ -12,6 +15,7 @@ load_dotenv()
 TOKEN = os.getenv("Discord_Bot_Token")
 Guild_ID = os.getenv("Guild_ID")
 GEMENI_KEY = os.getenv("API_KEY")
+CHANNEL_ID = os.getenv("Channel_ID")
 
 class Client(commands.Bot):
     async def on_ready(self):
@@ -34,8 +38,6 @@ class Client(commands.Bot):
 
     async def on_reaction_add(self, reaction, user):
         await reaction.message.channel.send("you reacted")
-
-
 
 
 intents = discord.Intents.default()
@@ -68,5 +70,10 @@ async def aiResponse(interaction: discord.Interaction, prompt: str):
 
     # Send the response as a follow-up message
     await interaction.followup.send(response_text)
+
+@client.tree.command(name="random-wiki-artical", description="Grabs a random wikipidia article and puts it in the channel", guild=GUILD_ID)
+async def randomWiki(interaction: discord.Interaction):
+    article = WikipediaGenerator.randomWikiGen()
+    await interaction.response.send_message(article)
 
 client.run(TOKEN)
