@@ -68,12 +68,20 @@ async def aiResponse(interaction: discord.Interaction, prompt: str):
     if len(response_text) > 2000:
         response_text = response_text[:2000]
 
+    if not prompt.strip():
+        await interaction.followup.send("Please provide a valid question or prompt.")
+        return
+
     # Send the response as a follow-up message
     await interaction.followup.send(response_text)
 
-@client.tree.command(name="random-wiki-artical", description="Grabs a random wikipidia article and puts it in the channel", guild=GUILD_ID)
+@client.tree.command(name="random-wiki-article", description="Grabs a random Wikipedia article and puts it in the channel", guild=GUILD_ID)
 async def randomWiki(interaction: discord.Interaction):
-    article = WikipediaGenerator.randomWikiGen()
-    await interaction.response.send_message(article)
+    try:
+        article = WikipediaGenerator.randomWikiGen()
+        await interaction.response.send_message(article)
+    except Exception as e:
+        await interaction.response.send_message("An error occurred while fetching a Wikipedia article. Please try again later.")
+        print(f"Error in randomWiki: {e}")
 
 client.run(TOKEN)
