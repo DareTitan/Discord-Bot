@@ -10,7 +10,7 @@ from discord import app_commands
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
 from dotenv import load_dotenv
-
+from collections import defaultdict
 
 load_dotenv()
 
@@ -31,6 +31,85 @@ spotify = Spotify(auth_manager=SpotifyClientCredentials(
 song_queue = []
 play_lock = asyncio.Lock()
 
+# Dictionary to store user EXP and levels per server
+user_levels = defaultdict(lambda: defaultdict(lambda: {"exp": 0, "level": 1}))
+
+def calculate_level(exp):
+    """Calculate the level based on EXP."""
+    return int((exp // 100) ** 0.5) + 1
+
+@client.event
+async def on_message(message):
+    """Handle text message events to award EXP."""
+    if message.author.bot:
+        return  # Ignore bot messages
+
+    guild_id = message.guild.id
+    user_id = message.author.id
+
+    # Award EXP for sending a message
+    user_data = user_levels[guild_id][user_id]
+    user_data["exp"] += 10
+    new_level = calculate_level(user_data["exp"])
+
+    # Check if the user leveled up
+    if new_level > user_data["level"]:
+        user_data["level"] = new_level
+        await message.channel.send(f"🎉 {message.author.mention} leveled up to **Level {new_level}**!")
+
+    await client.process_commands(message)  # Ensure commands still work
+
+@client.event
+async def on_voice_state_update(member, before, after):
+    """Handle voice state updates to award EXP."""
+    if member.bot:
+        return  # Ignore bot actions
+
+    guild_id = member.guild.id
+    user_id = member.id
+
+    # Award EXP when a user joins a voice channel
+    if before.channel is None and after.channel is not None:
+        user_data = user_levels[guild_id][user_id]
+        user_data["exp"] += 20
+        new_level = calculate_level(user_data["exp"])
+
+        # Check if the user leveled up
+        if new_level > user_data["level"]:
+            user_data["level"] = new_level
+            text_channel = discord.utils.get(member.guild.text_channels, name="general")
+            if text_channel:
+                await text_channel.send(f"🎉 {member.mention} leveled up to **Level {new_level}**!")
+
+@client.event
+async def on_ready():
+    """Sync slash commands and confirm bot is ready."""
+    try:
+        await client.tree.sync()
+        print(f"✅ Synced slash commands for {client.user}.")
+    except Exception as e:
+        print(f"❌ Failed to sync commands: {e}")
+    print(f"Bot is ready and logged in as {client.user}!")
+
+@client.tree.command(name="level", description="Check your current level and EXP")
+@app_commands.describe(user="The user whose level you want to check (leave blank for yourself)")
+async def level(interaction: discord.Interaction, user: discord.User = None):
+    """Displays the current level and EXP of a user."""
+    user = user or interaction.user  # Default to the command invoker if no user is specified
+    guild_id = interaction.guild.id
+    user_id = user.id
+
+    user_data = user_levels[guild_id][user_id]
+    exp = user_data["exp"]
+    level = user_data["level"]
+
+    embed = discord.Embed(
+        title=f"Level Info - {user}",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="Level", value=level, inline=True)
+    embed.add_field(name="EXP", value=exp, inline=True)
+    await interaction.response.send_message(embed=embed)
 
 async def play_next_song(vc, text_channel):
     """Plays the next song in the queue."""
@@ -305,6 +384,57 @@ async def shuffle(interaction: discord.Interaction):
 
     random.shuffle(song_queue)
     await interaction.response.send_message("🔀 The queue has been shuffled!")
+
+@client.tree.command(name="ping", description="Check the bot's latency")
+async def ping(interaction: discord.Interaction):
+    """Responds with the bot's latency."""
+    latency = round(client.latency * 1000)  # Convert to milliseconds
+    await interaction.response.send_message(f"🏓 Pong! Latency: {latency}ms")
+
+@client.tree.command(name="userinfo", description="Get information about a user")
+@app_commands.describe(user="The user to get information about (leave blank for yourself)")
+async def userinfo(interaction: discord.Interaction, user: discord.User = None):
+    """Displays information about a user."""
+    user = user or interaction.user  # Default to the command invoker if no user is specified
+    embed = discord.Embed(
+        title=f"User Info - {user}",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=user.avatar.url if user.avatar else None)
+    embed.add_field(name="Username", value=user.name, inline=True)
+    embed.add_field(name="Discriminator", value=f"#{user.discriminator}", inline=True)
+    embed.add_field(name="ID", value=user.id, inline=True)
+    embed.add_field(name="Bot?", value="Yes" if user.bot else "No", inline=True)
+    embed.add_field(name="Created At", value=user.created_at.strftime("%Y-%m-%d %H:%M:%S"), inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@client.tree.command(name="serverinfo", description="Get information about the server")
+async def serverinfo(interaction: discord.Interaction):
+    """Displays information about the server."""
+    guild = interaction.guild
+    embed = discord.Embed(
+        title=f"Server Info - {guild.name}",
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=guild.icon.url if guild.icon else None)
+    embed.add_field(name="Server Name", value=guild.name, inline=True)
+    embed.add_field(name="Server ID", value=guild.id, inline=True)
+    embed.add_field(name="Owner", value=guild.owner, inline=True)
+    embed.add_field(name="Member Count", value=guild.member_count, inline=True)
+    embed.add_field(name="Created At", value=guild.created_at.strftime("%Y-%m-%d %H:%M:%S"), inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@client.tree.command(name="avatar", description="Get the avatar of a user")
+@app_commands.describe(user="The user whose avatar you want to fetch (leave blank for yourself)")
+async def avatar(interaction: discord.Interaction, user: discord.User = None):
+    """Fetches and displays a user's avatar."""
+    user = user or interaction.user  # Default to the command invoker if no user is specified
+    embed = discord.Embed(
+        title=f"{user}'s Avatar",
+        color=discord.Color.orange()
+    )
+    embed.set_image(url=user.avatar.url if user.avatar else None)
+    await interaction.response.send_message(embed=embed)
 
 if __name__ == "__main__":
     client.run(TOKEN)
